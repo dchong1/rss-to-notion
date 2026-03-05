@@ -1,0 +1,16 @@
+# Environment and secrets - never commit
+.env
+
+# Extra env variants
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
