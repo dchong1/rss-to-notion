@@ -1,6 +1,19 @@
 # RSS-to-Notion Knowledge Database
 
-Fetches recent articles from RSS feeds, processes them with the Grok API for summarization, keywords, and relevance scoring, then upserts results into a Notion database.
+A small side project I built to automatically pull RSS feeds, let LLM summarize the articles, and push them into a Notion database.
+
+
+**Status**: Simple but functional MVP (Jan 2026).
+
+[![Python](https://img.shields.io/badge/Python-3.12-blue)](https://www.python.org) 
+[![Grok/xAI](https://img.shields.io/badge/Grok_API-xAI-orange)](https://x.ai)
+[![Notion](https://img.shields.io/badge/Notion_API-green)](https://developers.notion.com)
+
+## What it does
+- Fetches latest articles from a list of RSS feeds
+- Uses LLM (Grok) to create a short summary, extract keywords, and score relevance to a topic you choose
+- Automatically creates or updates entries in a Notion database
+
 
 ## Setup
 
@@ -92,3 +105,14 @@ print('NOTION_TOKEN set:', bool(t) and not t.startswith('nsecret_'))
 
 - Verify your xAI API key is valid
 - The script tries `grok-4-fast-non-reasoning` first, then falls back to `grok-4-1-fast-non-reasoning` if the model is unavailable
+
+
+## Future explorations
+- Link articles directly to ideas in other projects
+- GitHub Actions for daily automatic runs
+- More feed sources and better relevance scoring
+
+Just a personal tool I’m iterating on while learning API integrations and automation. Happy to take suggestions!
+
+## Screenshots
+[Add 2–3 screenshots here — CLI output, Notion database example, etc.]
