@@ -1,118 +1,103 @@
 # RSS-to-Notion Knowledge Database
 
-A small side project I built to automatically pull RSS feeds, let LLM summarize the articles, and push them into a Notion database.
+Personal knowledge database with two purposes: (1) accurate, first-principles understanding of how things work, and (2) longitudinal tracking of how real-world situations develop over time. Dual retrieval: RSS for trusted recurring sources, Exa for thematic discovery. LLM layer summarises neutrally and tags ontologically for future clustering.
 
-
-**Status**: Simple but functional MVP (Jan 2026).
-
-[![Python](https://img.shields.io/badge/Python-3.12-blue)](https://www.python.org) 
+[![Python](https://img.shields.io/badge/Python-3.12-blue)](https://www.python.org)
 [![Grok/xAI](https://img.shields.io/badge/Grok_API-xAI-orange)](https://x.ai)
 [![Notion](https://img.shields.io/badge/Notion_API-green)](https://developers.notion.com)
 
-## What it does
-- Fetches latest articles from a list of RSS feeds
-- Uses LLM (Grok) to create a short summary, extract keywords, and score relevance to a topic you choose
-- Automatically creates or updates entries in a Notion database
+## Architecture
 
+```
+RSS Feeds ──┐
+            ├──► Python pipeline ──► Grok LLM ──► Notion Database
+Exa Search ─┘
+                              │
+                   (summary, entry_type,
+                    situation_tag, keywords,
+                    trunk_branch, relevance_score)
+```
+
+## Notion Schema
+
+Create a Notion database with these 13 properties:
+
+| Property        | Notion Type  | Source                          |
+|-----------------|--------------|----------------------------------|
+| Title           | Title        | article title                    |
+| Summary         | Rich text    | LLM summary                      |
+| Keywords        | Multi-select | flattened keyword list           |
+| Source_URL      | URL          | article url                      |
+| Entry_Type      | Select       | LLM entry_type                   |
+| Cluster_Tag     | Select       | LLM situation_tag (if non-null) |
+| Trunk_Branch    | Rich text    | LLM trunk_branch                |
+| Relevance_Score | Number       | LLM relevance_score              |
+| Source_Mode     | Select       | "rss" or "exa"                   |
+| Feed_Source     | Rich text    | feed name or "exa-search"        |
+| Date_Published  | Date         | article published_date           |
+| Date_Added      | Date         | utcnow() on first insert         |
+| Last_Updated    | Date         | utcnow() on every upsert         |
+
+Share the database with your Notion integration (••• → Add connections).
 
 ## Setup
 
 1. **Copy `.env.example` to `.env`** and fill in your values:
+
    - `NOTION_TOKEN` – Notion integration token
    - `NOTION_DATABASE_ID` – Target database ID (32 chars) or full Notion database URL
    - `GROK_API_KEY` – xAI API key
+   - `EXA_API_KEY` – Exa API key (required for `--mode exa` or `--mode both`)
 
-2. **Install dependencies** (use the same Python you will run the script with):
+2. **Install dependencies** (Python 3.12):
 
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Create a Notion database** with these properties:
-   - **Title** (Title)
-   - **Summary** (Rich text)
-   - **Keywords** (Multi-select)
-   - **Source URL** (URL)
-   - **Date Added** (Date)
-   - **Last Updated** (Date)
+3. **Create the Notion database** with the 13 properties above and share it with your integration.
 
-   Share the database with your Notion integration (••• → Add connections).
+## Usage
 
-## Running
-
-**Important:** Use the same Python interpreter that has the packages installed. If you see `ModuleNotFoundError: No module named 'feedparser'`, you are likely using a different Python (e.g. Homebrew vs conda).
+| Command                                                | What it does                    |
+|--------------------------------------------------------|---------------------------------|
+| `python src/rss_to_notion.py`                          | RSS mode, last 2 days, default topic |
+| `python src/rss_to_notion.py --mode exa`               | Exa discovery, default topic    |
+| `python src/rss_to_notion.py --mode both`              | RSS + Exa in parallel            |
+| `python src/rss_to_notion.py --topic "X" --mode exa`   | Exa search on custom topic      |
+| `python src/rss_to_notion.py --since-days 7`           | RSS, extend lookback window      |
 
 ```bash
-# From project root
-python src/rss_to_notion.py
+# List Notion databases shared with your integration
+python src/rss_to_notion.py --list-databases
 ```
 
-### Config options
+## GitHub Actions
 
-Parameters are in `RSSConfig` in `src/rss_to_notion.py`. Override via CLI or env:
+A daily workflow runs at 00:00 UTC (08:00 HKT). Configure these secrets:
 
-| Option | CLI | Env | Default |
-|--------|-----|-----|---------|
-| Topic | `--topic "AI ethics"` | `RSS_TOPIC` | `vibe coding` |
-| Days | `--since-days 14` | `RSS_SINCE_DAYS` | `3` |
-
-```bash
-python src/rss_to_notion.py --topic "AI ethics" --since-days 14
-```
-
-For other parameters (articles per feed, summary length, RSS feeds, etc.), edit `RSSConfig` or pass a custom config when calling `update_notion_with_rss()` programmatically. RSS feed URLs are defined in `RSS_FEEDS` at the top of the script.
-
-**Alternative Python:** If you use Homebrew Python, install there first:
-
-```bash
-/opt/homebrew/bin/python3 -m pip install -r requirements.txt
-/opt/homebrew/bin/python3 src/rss_to_notion.py
-```
+- `NOTION_TOKEN`
+- `NOTION_DATABASE_ID`
+- `GROK_API_KEY`
+- `EXA_API_KEY`
+- `RSS_DEFAULT_TOPIC` (topic for Exa search, e.g. `"energy climate macro policy"`)
 
 ## Troubleshooting
 
-### Python interpreter mismatch
-
-Packages may be installed in one Python (e.g. conda) while the script runs with another (e.g. Homebrew). Verify which Python has the packages:
-
-```bash
-python -c "import feedparser; print('OK')"
-/opt/homebrew/bin/python3 -c "import feedparser; print('OK')"
-```
-
-### .env not loaded
-
-Ensure `.env` is in the project root and contains real values (no placeholders):
-
-```bash
-python -c "
-from dotenv import load_dotenv
-import os
-load_dotenv('.env')
-t = os.environ.get('NOTION_TOKEN','')
-print('NOTION_TOKEN set:', bool(t) and not t.startswith('nsecret_'))
-"
-```
-
-### Notion errors
-
-- **Share the database**: Click ••• on the database page → Add connections → select your integration. If the database is inside a page, share that parent page too.
-- **Find the correct database ID**: Run `python src/rss_to_notion.py --list-databases` to list databases shared with your integration
-- Check that property names and types match exactly (Title, Summary, Keywords, Source URL, Date Added, Last Updated)
-- `NOTION_DATABASE_ID` accepts the 32-char ID or the full Notion database URL
-
-### Grok API errors
-
-- Verify your xAI API key is valid
-- The script tries `grok-4-fast-non-reasoning` first, then falls back to `grok-4-1-fast-non-reasoning` if the model is unavailable
-
+- **Share the database**: Click ••• on the database page → Add connections → select your integration.
+- **Database ID**: Run `python src/rss_to_notion.py --list-databases` to list databases.
+- **Property names**: Must match exactly (e.g. `Source_URL`, not `Source URL`).
+- **Exa mode**: Requires `EXA_API_KEY` in `.env`.
 
 ## Future explorations
-- Link articles directly to ideas in other projects
-- GitHub Actions for daily automatic runs
-- More feed sources and better relevance scoring
 
-Just a personal tool I’m iterating on while learning API integrations and automation. Happy to take suggestions!
+- Exa `findSimilar` seeding: pass URL of a saved entry to discover related content
+- Notion filtered view per `situation_tag` as a chronological tracker
+- Weekly digest: new `trunk_branch` entries grouped by domain
+- Obsidian export of `trunk_branch` entries as a concept graph
 
 ## Screenshots
-[Add 2–3 screenshots here — CLI output, Notion database example, etc.]
+
+1. CLI output
+2. Notion table view filtered by Cluster_Tag
+3. Single Notion entry showing all fields
