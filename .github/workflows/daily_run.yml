@@ -2,6 +2,9 @@ name: Daily RSS pipeline
 
 on:
   workflow_dispatch:
+  schedule:
+    # 7am Hong Kong Time (UTC+8) = 23:00 UTC
+    - cron: "0 23 * * *"
 
 jobs:
   daily:

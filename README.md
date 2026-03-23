@@ -1,10 +1,13 @@
-# RSS-to-Notion Knowledge Database
+# RSS & Exa to Notion Knowledge Database
 
-Personal knowledge database with two purposes: (1) accurate, first-principles understanding of how things work, and (2) longitudinal tracking of how real-world situations develop over time. **RSS** keeps track of your interested feeds (sources configurable); **Exa** produces high-relevance materials via semantic search. The LLM layer summarises neutrally and tags ontologically for future clustering.
+Personal knowledge database that pulls content via **RSS** feeds or **Exa** semantic search. Two purposes: (1) accurate, first-principles understanding of how things work, and (2) longitudinal tracking of how real-world situations develop over time.
+
+**RSS** keeps track of your configured feeds. **Exa** produces high-relevance materials via semantic search. The LLM layer summarises neutrally and tags ontologically for future clustering.
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue)](https://www.python.org)
 [![Grok/xAI](https://img.shields.io/badge/Grok_API-xAI-orange)](https://x.ai)
 [![Notion](https://img.shields.io/badge/Notion_API-green)](https://developers.notion.com)
+[![Exa](https://img.shields.io/badge/Exa_Search-API-blue)](https://exa.ai)
 
 ## RSS vs Exa: Two Approaches
 
@@ -57,7 +60,7 @@ Create a Notion database with these 13 properties:
 | Date_Added      | Date         | utcnow() on first insert         |
 | Last_Updated    | Date         | utcnow() on every upsert         |
 
-Share the database with your Notion integration (••• → Add connections).
+Share the database with your Notion integration (••• → Add connections). See [Screenshots](#screenshots) for the populated table view.
 
 ## Setup
 
@@ -78,7 +81,7 @@ Share the database with your Notion integration (••• → Add connections).
 
 ## Usage
 
-RSS is the default and primary pipeline. Exa is for targeted discovery when researching a specific topic.
+RSS mode is the default; Exa mode is for targeted discovery when researching a specific topic.
 
 | Command                                                | What it does                          |
 |--------------------------------------------------------|---------------------------------------|
@@ -98,7 +101,7 @@ Run with `-i` to be prompted instead of passing flags:
 python src/rss_to_notion.py -i
 ```
 
-Prompts: **Mode** (rss/exa), **Topic** (Exa only), **Since days** (both modes).
+Prompts: **Mode** (rss/exa), **Topic** (Exa only), **Since days** (both modes). See [Screenshots](#screenshots) for an example run.
 
 ```bash
 # List Notion databases shared with your integration
@@ -107,7 +110,7 @@ python src/rss_to_notion.py --list-databases
 
 ## GitHub Actions
 
-Run the workflow manually from the Actions tab. Daily run uses RSS only. Configure these secrets:
+The workflow runs automatically every day at 7am Hong Kong Time (UTC+8). You can also trigger it manually from the Actions tab. Daily run uses RSS only. Configure these secrets:
 
 - `NOTION_TOKEN`
 - `NOTION_DATABASE_ID`
@@ -131,6 +134,16 @@ For manual Exa runs, also set `EXA_API_KEY` and optionally `RSS_TOPIC`.
 
 ## Screenshots
 
-1. CLI output
-2. Notion table view filtered by Cluster_Tag
-3. Single Notion entry showing all fields
+Example outputs from interactive Exa mode.
+
+**CLI interactive run**
+
+![CLI interactive run](assets/cli-interactive.png)
+
+*Interactive mode: prompts for mode, topic, since-days. Example run with mode=exa and 5 articles created in Notion.*
+
+**Notion database view**
+
+![Notion database table view](assets/notion-database.png)
+
+*Table view with Title, Summary, Cluster_Tag, Keywords, and Feed_Source columns.*
