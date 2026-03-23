@@ -1,19 +1,18 @@
 """
 RSS-to-Notion Knowledge Database
 
-Personal knowledge database with dual retrieval: RSS for trusted recurring
-sources, Exa for thematic discovery. LLM layer summarises neutrally and tags
-ontologically for future clustering.
+Personal knowledge database with RSS as primary pipeline for trusted recurring
+sources; Exa for targeted thematic discovery when needed. LLM layer summarises
+neutrally and tags ontologically for future clustering.
 """
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import json
 import os
 from typing import Literal, Optional
 
-import feedparser
+import feedparser  # pyright: ignore[reportMissingImports]
 import httpx
 from dotenv import load_dotenv
 from notion_client import Client
@@ -23,28 +22,12 @@ from openai import OpenAI
 # Load .env from project root (parent of src/)
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
+from feeds import load_feeds
 
 # -----------------------------------------------------------------------------
 # Internal article schema (shared between RSS and Exa modes)
 # -----------------------------------------------------------------------------
 ArticleSchema = dict[str, str]
-
-
-# -----------------------------------------------------------------------------
-# RSS Feeds Configuration
-# -----------------------------------------------------------------------------
-# Domain-specific feeds: energy, climate, macro, policy, regulation
-RSS_FEEDS = [
-    "https://www.iea.org/feed",
-    "https://www.carbonbrief.org/feed",
-    "https://www.ft.com/energy?format=rss",
-    "https://feeds.reuters.com/reuters/businessNews",
-    "https://www.bis.org/rss/work.rss",
-    "https://www.federalreserve.gov/feeds/press_all.xml",
-    "https://www.imf.org/en/News/rss?language=eng",
-    "https://www.sfc.hk/en/rss/news",
-    "https://feeds.feedburner.com/NberWorkingPapers",
-]
 
 
 # -----------------------------------------------------------------------------
@@ -57,9 +40,11 @@ class RSSConfig:
     Override any field to customize behavior.
 
     Attributes:
-        mode: Retrieval mode: rss, exa, or both.
+        mode: Retrieval mode: rss (default) or exa.
         topic: Search topic for Exa; used in Grok relevance context.
-        since_days: Only include RSS articles published within this many days.
+        exa_num_results: Max results from Exa search (default 5).
+        relevance_min: Only upsert Exa articles with relevance_score >= this (default 7).
+        since_days: Only include articles published within this many days (RSS and Exa).
         articles_per_feed: Max articles to fetch per RSS feed.
         content_snippet_length: Max chars from article text sent to Grok.
         summary_max_chars: Max chars for Summary in Notion.
@@ -68,14 +53,16 @@ class RSSConfig:
         grok_models: Fallback Grok models to try.
     """
 
-    mode: Literal["rss", "exa", "both"] = "rss"
+    mode: Literal["rss", "exa"] = "rss"
     topic: str = "energy climate macro policy"
     since_days: int = 2
     articles_per_feed: int = 3
+    exa_num_results: int = 5
+    relevance_min: int = 7
     content_snippet_length: int = 1000
     summary_max_chars: int = 2000
     keywords_max: int = 10
-    rss_feeds: list[str] = field(default_factory=lambda: list(RSS_FEEDS))
+    rss_feeds: list[str] = field(default_factory=load_feeds)
     grok_models: list[str] = field(
         default_factory=lambda: [
             "grok-4-fast-non-reasoning",
@@ -147,7 +134,22 @@ def fetch_rss_articles(config: RSSConfig) -> list[ArticleSchema]:
     return articles
 
 
-def fetch_exa_articles(topic: str, exa_api_key: str, num_results: int = 10) -> list[ArticleSchema]:
+def _normalize_url(url: str) -> str:
+    """Normalize URL for deduplication (strip fragment, query, trailing slash)."""
+    u = (url or "").strip().lower()
+    if "#" in u:
+        u = u.split("#")[0]
+    if "?" in u:
+        u = u.split("?")[0]
+    return u.rstrip("/")
+
+
+def fetch_exa_articles(
+    topic: str,
+    exa_api_key: str,
+    num_results: int = 5,
+    since_days: Optional[int] = None,
+) -> list[ArticleSchema]:
     """Fetch articles from Exa semantic search, return list conforming to ArticleSchema."""
     try:
         from exa_py import Exa
@@ -156,23 +158,30 @@ def fetch_exa_articles(topic: str, exa_api_key: str, num_results: int = 10) -> l
         return []
 
     exa = Exa(api_key=exa_api_key)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    search_kwargs: dict = {"num_results": num_results, "contents": {"highlights": True}}
+    if since_days is not None and since_days > 0:
+        start_dt = now - timedelta(days=since_days)
+        search_kwargs["start_published_date"] = start_dt.strftime("%Y-%m-%d")
 
     try:
-        response = exa.search(
-            topic,
-            num_results=num_results,
-            contents={"highlights": True},
-        )
+        response = exa.search(topic, **search_kwargs)
     except Exception as e:
         print(f"Warning: Exa API error: {e}")
         return []
 
     articles: list[ArticleSchema] = []
+    seen_urls: set[str] = set()
     for result in response.results:
         url = getattr(result, "url", "") or ""
         if not url:
             continue
+        norm = _normalize_url(url)
+        if norm in seen_urls:
+            continue
+        seen_urls.add(norm)
         title = getattr(result, "title", "") or "Untitled"
         pub_date = getattr(result, "published_date", None) or now_iso
         # Prefer highlights (key passages); fallback to text or title
@@ -200,34 +209,15 @@ def fetch_articles(
     config: RSSConfig,
     exa_api_key: str = "",
 ) -> list[ArticleSchema]:
-    """Fetch articles based on mode; deduplicate by URL when mode is both."""
+    """Fetch articles based on mode (rss or exa)."""
     if config.mode == "rss":
         return fetch_rss_articles(config)
-    if config.mode == "exa":
-        return fetch_exa_articles(config.topic, exa_api_key)
-
-    # mode == "both": run in parallel, dedupe by URL
-    all_articles: list[ArticleSchema] = []
-    seen_urls: set[str] = set()
-
-    def run_rss() -> list[ArticleSchema]:
-        return fetch_rss_articles(config)
-
-    def run_exa() -> list[ArticleSchema]:
-        return fetch_exa_articles(config.topic, exa_api_key)
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        future_rss = executor.submit(run_rss)
-        future_exa = executor.submit(run_exa)
-        for future in as_completed([future_rss, future_exa]):
-            for article in future.result():
-                url = article["url"]
-                if url not in seen_urls:
-                    seen_urls.add(url)
-                    all_articles.append(article)
-
-    all_articles.sort(key=lambda a: a["published_date"], reverse=True)
-    return all_articles
+    return fetch_exa_articles(
+        config.topic,
+        exa_api_key,
+        num_results=config.exa_num_results,
+        since_days=config.since_days,
+    )
 
 
 def update_notion_with_rss(
@@ -244,7 +234,7 @@ def update_notion_with_rss(
         notion_token: Notion integration token.
         database_id: Notion database ID to upsert into.
         grok_api_key: xAI API key for Grok.
-        exa_api_key: Exa API key (required when mode is exa or both).
+        exa_api_key: Exa API key (required when mode is exa).
         config: Optional RSSConfig; uses DEFAULT_CONFIG if not provided.
     """
     cfg = config or DEFAULT_CONFIG
@@ -289,10 +279,10 @@ def update_notion_with_rss(
                 ) from e
 
         # ---------------------------------------------------------------------
-        # Fetch articles (RSS, Exa, or both)
+        # Fetch articles (RSS or Exa)
         # ---------------------------------------------------------------------
         articles = fetch_articles(cfg, exa_api_key=exa_api_key)
-        mode_label = "RSS" if cfg.mode == "rss" else "Exa" if cfg.mode == "exa" else "RSS+Exa"
+        mode_label = "RSS" if cfg.mode == "rss" else "Exa"
         print(f"Fetched {len(articles)} unique articles ({mode_label})")
 
         # ---------------------------------------------------------------------
@@ -402,6 +392,13 @@ Return exactly this structure:
             situation_tag = processed.get("situation_tag")
             relevance_score = int(processed.get("relevance_score", 0))
             trunk_branch = (processed.get("trunk_branch") or "").strip()
+
+            # Exa: only upsert high-relevance articles
+            if article["source_mode"] == "exa" and relevance_score < cfg.relevance_min:
+                print(
+                    f"Skipped (relevance {relevance_score} < {cfg.relevance_min}): {article['title']}"
+                )
+                continue
 
             now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -545,9 +542,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--mode",
-        choices=["rss", "exa", "both"],
+        choices=["rss", "exa"],
         default=os.environ.get("RSS_MODE", "rss"),
-        help="Retrieval mode: rss (default), exa, or both",
+        help="Retrieval mode: rss (default, primary pipeline) or exa (targeted discovery)",
     )
     parser.add_argument(
         "--topic",
@@ -558,7 +555,13 @@ if __name__ == "__main__":
         "--since-days",
         type=int,
         default=int(os.environ.get("RSS_SINCE_DAYS", str(DEFAULT_CONFIG.since_days))),
-        help="Only include RSS articles from last N days (default: 2)",
+        help="Only include articles from last N days (RSS and Exa, default: 2)",
+    )
+    parser.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        help="Prompt for mode, topic, and since-days interactively",
     )
     args = parser.parse_args()
 
@@ -576,14 +579,45 @@ if __name__ == "__main__":
         )
         raise SystemExit(1)
 
-    if args.mode in ("exa", "both") and not exa_api_key:
-        print(
-            "Error: EXA_API_KEY required when --mode is exa or both. "
-            "Add EXA_API_KEY to your .env file."
+    if args.interactive:
+        print("\n--- RSS-to-Notion (interactive) ---\n")
+        mode_in = input("Mode (rss/exa) [rss]: ").strip().lower() or "rss"
+        if mode_in not in ("rss", "exa"):
+            mode_in = "rss"
+        if mode_in == "exa":
+            topic_in = input("Topic (e.g. iran war and oil price): ").strip()
+            if not topic_in:
+                topic_in = args.topic
+        else:
+            topic_in = args.topic
+        since_days_in_str = input("Since days [2]: ").strip()
+        since_days_in = (
+            int(since_days_in_str) if since_days_in_str.isdigit() else args.since_days
         )
-        raise SystemExit(1)
-
-    config = RSSConfig(mode=args.mode, topic=args.topic, since_days=args.since_days)
+        if mode_in == "exa" and not exa_api_key:
+            print(
+                "Error: EXA_API_KEY required when --mode is exa. "
+                "Add EXA_API_KEY to your .env file."
+            )
+            raise SystemExit(1)
+        config = RSSConfig(
+            mode=mode_in,
+            topic=topic_in,
+            since_days=since_days_in,
+        )
+        print(f"\nRunning: mode={mode_in}, topic={topic_in!r}, since_days={since_days_in}\n")
+    else:
+        if args.mode == "exa" and not exa_api_key:
+            print(
+                "Error: EXA_API_KEY required when --mode is exa. "
+                "Add EXA_API_KEY to your .env file."
+            )
+            raise SystemExit(1)
+        config = RSSConfig(
+            mode=args.mode,
+            topic=args.topic,
+            since_days=args.since_days,
+        )
     try:
         update_notion_with_rss(
             notion_token=notion_token,

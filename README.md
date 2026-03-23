@@ -1,21 +1,40 @@
 # RSS-to-Notion Knowledge Database
 
-Personal knowledge database with two purposes: (1) accurate, first-principles understanding of how things work, and (2) longitudinal tracking of how real-world situations develop over time. Dual retrieval: RSS for trusted recurring sources, Exa for thematic discovery. LLM layer summarises neutrally and tags ontologically for future clustering.
+Personal knowledge database with two purposes: (1) accurate, first-principles understanding of how things work, and (2) longitudinal tracking of how real-world situations develop over time. **RSS** keeps track of your interested feeds (sources configurable); **Exa** produces high-relevance materials via semantic search. The LLM layer summarises neutrally and tags ontologically for future clustering.
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue)](https://www.python.org)
 [![Grok/xAI](https://img.shields.io/badge/Grok_API-xAI-orange)](https://x.ai)
 [![Notion](https://img.shields.io/badge/Notion_API-green)](https://developers.notion.com)
 
+## RSS vs Exa: Two Approaches
+
+| Aspect | RSS Mode | Exa Mode |
+|--------|----------|----------|
+| **Objective** | Keep track of interested feeds | Produce high-relevance materials |
+| **Approach** | Feed-based (pull from configured sources) | Semantic search (meaning-based retrieval) |
+| **Input** | Feed URLs in `config/rss_feeds.txt` | Search topic (e.g. "ai and datacentre buildout") |
+| **Selection** | Latest N articles per feed, within `--since-days` | Top matches for topic, filtered by `--since-days` |
+| **Config** | `config/rss_feeds.txt`, `--since-days` | `--topic`, `--since-days` |
+| **API** | None (public RSS) | Exa (requires `EXA_API_KEY`) |
+
+RSS pulls from your configured feeds by recency. Exa uses semantic search to surface content that matches the *meaning* of your topic, not just keywords.
+
 ## Architecture
 
-```
-RSS Feeds ──┐
-            ├──► Python pipeline ──► Grok LLM ──► Notion Database
-Exa Search ─┘
-                              │
-                   (summary, entry_type,
-                    situation_tag, keywords,
-                    trunk_branch, relevance_score)
+```mermaid
+flowchart TB
+    subgraph inputs [ ]
+        rssFeeds[RSS Feeds: config/rss_feeds.txt]
+        exaQuery[Exa Search: topic query]
+    end
+
+    rssFeeds -->|"Feed-based: latest N per feed, filtered by since-days"| fetch
+    exaQuery -->|"Semantic: top matches for topic, filtered by since-days"| fetch
+    fetch[Fetch Articles]
+    fetch --> grok[Grok LLM]
+    grok --> filter{Exa: relevance >= 7?}
+    filter -->|Yes or RSS| notion[(Notion Database)]
+    filter -->|No| skip[Skip article]
 ```
 
 ## Notion Schema
@@ -47,7 +66,7 @@ Share the database with your Notion integration (••• → Add connections).
    - `NOTION_TOKEN` – Notion integration token
    - `NOTION_DATABASE_ID` – Target database ID (32 chars) or full Notion database URL
    - `GROK_API_KEY` – xAI API key
-   - `EXA_API_KEY` – Exa API key (required for `--mode exa` or `--mode both`)
+   - `EXA_API_KEY` – Exa API key (required for `--mode exa` only)
 
 2. **Install dependencies** (Python 3.12):
 
@@ -59,13 +78,27 @@ Share the database with your Notion integration (••• → Add connections).
 
 ## Usage
 
-| Command                                                | What it does                    |
-|--------------------------------------------------------|---------------------------------|
-| `python src/rss_to_notion.py`                          | RSS mode, last 2 days, default topic |
-| `python src/rss_to_notion.py --mode exa`               | Exa discovery, default topic    |
-| `python src/rss_to_notion.py --mode both`              | RSS + Exa in parallel            |
-| `python src/rss_to_notion.py --topic "X" --mode exa`   | Exa search on custom topic      |
-| `python src/rss_to_notion.py --since-days 7`           | RSS, extend lookback window      |
+RSS is the default and primary pipeline. Exa is for targeted discovery when researching a specific topic.
+
+| Command                                                | What it does                          |
+|--------------------------------------------------------|---------------------------------------|
+| `python src/rss_to_notion.py`                          | RSS mode (default), last 2 days       |
+| `python src/rss_to_notion.py -i`                       | Interactive: prompts for mode, topic, since-days |
+| `python src/rss_to_notion.py --since-days 7`           | RSS, extend lookback window           |
+| `python src/rss_to_notion.py --mode exa`               | Exa discovery, default topic          |
+| `python src/rss_to_notion.py --topic "X" --mode exa`   | Exa search on custom topic            |
+
+Exa mode limits output to 5 results and only upserts articles with relevance score ≥ 7.
+
+### Interactive mode
+
+Run with `-i` to be prompted instead of passing flags:
+
+```bash
+python src/rss_to_notion.py -i
+```
+
+Prompts: **Mode** (rss/exa), **Topic** (Exa only), **Since days** (both modes).
 
 ```bash
 # List Notion databases shared with your integration
@@ -74,13 +107,13 @@ python src/rss_to_notion.py --list-databases
 
 ## GitHub Actions
 
-A daily workflow runs at 00:00 UTC (08:00 HKT). Configure these secrets:
+Run the workflow manually from the Actions tab. Daily run uses RSS only. Configure these secrets:
 
 - `NOTION_TOKEN`
 - `NOTION_DATABASE_ID`
 - `GROK_API_KEY`
-- `EXA_API_KEY`
-- `RSS_DEFAULT_TOPIC` (topic for Exa search, e.g. `"energy climate macro policy"`)
+
+For manual Exa runs, also set `EXA_API_KEY` and optionally `RSS_TOPIC`.
 
 ## Troubleshooting
 

@@ -13,10 +13,20 @@ Overview of the project layout and where to find or add important files.
 PROJECT_ROOT/
 ├── .cursor/
 │   └── rules/
-│       ├── cursor-rules.mdc      # How to add or edit Cursor rules
-│       ├── directory-structure.mdc  # This file - project layout reference
-│       └── self-improve.mdc      # Guidelines for improving rules over time
-└── (project source files - add as project grows)
+│       ├── cursor-rules.mdc        # How to add or edit Cursor rules
+│       ├── directory-structure.mdc # This file - project layout reference
+│       └── self-improve.mdc        # Guidelines for improving rules over time
+├── .github/workflows/
+│   └── daily_run.yml               # GitHub Actions: manual RSS pipeline
+├── config/
+│   └── rss_feeds.txt               # RSS feed URLs (one per line, # for comments)
+├── src/
+│   ├── feeds.py                    # Feed loading from file or defaults
+│   └── rss_to_notion.py            # Main pipeline: RSS/Exa → Grok → Notion
+├── .env.example                    # Env template (copy to .env)
+├── pyrightconfig.json              # Pyright/type-check config
+├── README.md
+└── requirements.txt
 ```
 
 ## Important Files and Folders
@@ -27,6 +37,8 @@ PROJECT_ROOT/
 | `.cursor/rules/cursor-rules.mdc` | Rule creation/editing conventions and structure. |
 | `.cursor/rules/self-improve.mdc` | Triggers and process for evolving rules from code patterns. |
 | `.cursor/rules/directory-structure.mdc` | This reference for project layout. |
+| `config/rss_feeds.txt` | RSS feed URLs. Override via `RSS_FEEDS_FILE` env var. |
+| `src/rss_to_notion.py` | Main entrypoint. Run: `python src/rss_to_notion.py` |
 
 ## When Adding New Directories
 

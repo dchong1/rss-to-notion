@@ -1,8 +1,6 @@
-name: Daily RSS + Exa pipeline
+name: Daily RSS pipeline
 
 on:
-  schedule:
-    - cron: "0 0 * * *"  # 00:00 UTC = 08:00 HKT
   workflow_dispatch:
 
 jobs:
@@ -26,12 +24,3 @@ jobs:
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
         run: python src/rss_to_notion.py --mode rss --since-days 2
-
-      - name: Exa mode
-        env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
-          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
-          RSS_TOPIC: ${{ secrets.RSS_DEFAULT_TOPIC }}
-        run: python src/rss_to_notion.py --mode exa --topic "$RSS_TOPIC"
