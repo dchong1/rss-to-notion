@@ -1,0 +1,51 @@
+# Keyword taxonomy (controlled vocabulary for domain, concept, time_signal)
+# The LLM picks from these lists. Entity and region stay open-ended.
+# One keyword per line. Section headers: [domain], [concept], [time_signal]
+# Delete this file to use built-in defaults.
+
+[domain]
+fiscal-policy
+monetary-policy
+energy-geopolitics
+climate-policy
+energy-storage
+ev-batteries
+semiconductor-supply-chain
+data-infrastructure
+tech-regulation
+ai-innovation
+private-markets
+consumer-finance
+international-trade
+labor-dynamics
+commodities
+defense-spending
+demographics
+other
+
+[concept]
+crowding-out
+debt-monetisation
+learning-curves
+transmission-mechanism
+supply-demand
+regulatory-arbitrage
+currency-effects
+fiscal-multiplier
+moral-hazard
+network-effects
+economies-of-scale
+path-dependency
+contagion
+deglobalization
+reshoring-incentives
+risk-premia
+other
+
+[time_signal]
+structural-trend
+cyclical
+near-term
+historical
+regime-shift
+external-shock

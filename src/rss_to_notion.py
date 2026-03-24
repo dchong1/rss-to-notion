@@ -22,7 +22,7 @@ from openai import OpenAI
 # Load .env from project root (parent of src/)
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-from feeds import load_feeds
+from feeds import load_cluster_tags, load_feeds, load_keywords
 
 # -----------------------------------------------------------------------------
 # Internal article schema (shared between RSS and Exa modes)
@@ -50,6 +50,8 @@ class RSSConfig:
         summary_max_chars: Max chars for Summary in Notion.
         keywords_max: Max keywords stored in Notion.
         rss_feeds: List of RSS feed URLs.
+        cluster_tags: Allowed cluster tags for situation-updates (from file or defaults).
+        keyword_taxonomy: Allowed keywords per category (domain, concept, time_signal).
         grok_models: Fallback Grok models to try.
     """
 
@@ -63,6 +65,8 @@ class RSSConfig:
     summary_max_chars: int = 2000
     keywords_max: int = 10
     rss_feeds: list[str] = field(default_factory=load_feeds)
+    cluster_tags: list[str] = field(default_factory=load_cluster_tags)
+    keyword_taxonomy: dict[str, list[str]] = field(default_factory=load_keywords)
     grok_models: list[str] = field(
         default_factory=lambda: [
             "grok-4-fast-non-reasoning",
@@ -278,6 +282,30 @@ def update_notion_with_rss(
                     "(2) NOTION_TOKEN and NOTION_DATABASE_ID are correct."
                 ) from e
 
+        # Fetch schema to get existing Cluster_Tag and Keywords options; merge with config
+        db_schema = notion.databases.retrieve(db_id)
+        cluster_prop = db_schema.get("properties", {}).get("Cluster_Tag", {})
+        select_opts = cluster_prop.get("select", {}).get("options", [])
+        existing_tags = [o["name"] for o in select_opts if o.get("name")]
+        allowed_tags = list(dict.fromkeys(cfg.cluster_tags + existing_tags))
+
+        keywords_prop = db_schema.get("properties", {}).get("Keywords", {})
+        multi_opts = keywords_prop.get("multi_select", {}).get("options", [])
+        existing_keyword_names = [o["name"] for o in multi_opts if o.get("name")]
+
+        def _merge_keyword_category(category: str) -> list[str]:
+            config_vals = cfg.keyword_taxonomy.get(category, [])
+            notion_vals = [
+                n.split(":", 1)[1]
+                for n in existing_keyword_names
+                if n.startswith(category + ":")
+            ]
+            return list(dict.fromkeys(config_vals + notion_vals))
+
+        allowed_domain = _merge_keyword_category("domain")
+        allowed_concept = _merge_keyword_category("concept")
+        allowed_time_signal = _merge_keyword_category("time_signal")
+
         # ---------------------------------------------------------------------
         # Fetch articles (RSS or Exa)
         # ---------------------------------------------------------------------
@@ -307,14 +335,14 @@ Return exactly this structure:
 
   "entry_type": "one of: concept-explainer | situation-update | data-release | policy-change | historical-case. Use situation-update for articles tracking the evolution of an ongoing development (e.g. US debt ceiling, Fed rate path, China property sector). Use concept-explainer when the article primarily explains how something works.",
 
-  "situation_tag": "If entry_type is situation-update, provide a short stable slug that groups related updates together over time. Examples: 'us-fiscal-trajectory', 'fed-rate-cycle-2024-26', 'china-ev-export-growth', 'eu-carbon-border-adjustment'. Use null for all other entry types.",
+  "situation_tag": "Pick EXACTLY ONE from this list for every article: {allowed_cluster_tags}. Assign the best-matching theme. Prefer reusing an existing tag when the article clearly fits. Use 'other' only when none of the listed themes apply.",
 
   "keywords": {{
-    "domain": ["primary subject area, e.g. fiscal-policy, energy-storage, monetary-policy, semiconductor-supply-chain"],
-    "concept": ["underlying principle or mechanism at play, e.g. concept:crowding-out, concept:debt-monetisation, concept:learning-curves"],
-    "entity": ["named organisations, instruments, standards, treaties — only if central to the article"],
-    "region": ["only if geography is material to the mechanism"],
-    "time_signal": ["pick exactly one: structural-trend | cyclical | near-term-event | historical-case"]
+    "domain": ["pick from: {allowed_domain}"],
+    "concept": ["pick from: {allowed_concept}"],
+    "entity": ["named organisations, instruments, standards, treaties — only if central to the article; may add new values"],
+    "region": ["only if geography is material to the mechanism; may add new values"],
+    "time_signal": ["pick exactly one from: {allowed_time_signal}"]
   }},
 
   "relevance_score": integer 0-10 where: 10 = core mechanism explained or significant situation update, 5 = useful context or corroborating data point, 1 = peripheral or repetitive news item,
@@ -325,7 +353,13 @@ Return exactly this structure:
         for article in articles:
             content_snippet = (article["text"] or "")[: cfg.content_snippet_length]
             article_text = f"Title: {article['title']}\n\nContent: {content_snippet}"
-            user_prompt = user_prompt_template.format(article_text=article_text)
+            user_prompt = user_prompt_template.format(
+                article_text=article_text,
+                allowed_cluster_tags=", ".join(allowed_tags),
+                allowed_domain=", ".join(allowed_domain),
+                allowed_concept=", ".join(allowed_concept),
+                allowed_time_signal=", ".join(allowed_time_signal),
+            )
 
             grok_models = cfg.grok_models
             content: str | None = None
@@ -369,9 +403,14 @@ Return exactly this structure:
                     "trunk_branch": "",
                 }
 
-            # Post-process: flatten keywords with type prefix
+            # Post-process: flatten keywords with type prefix and filter controlled categories
             keywords_obj = processed.get("keywords") or {}
             flattened: list[str] = []
+            controlled: dict[str, list[str]] = {
+                "domain": allowed_domain,
+                "concept": allowed_concept,
+                "time_signal": allowed_time_signal,
+            }
             for prefix, keys in [
                 ("domain", keywords_obj.get("domain", [])),
                 ("concept", keywords_obj.get("concept", [])),
@@ -381,15 +420,22 @@ Return exactly this structure:
             ]:
                 for k in keys if isinstance(keys, list) else []:
                     val = str(k).strip()
-                    if val and not val.startswith(prefix + ":"):
-                        flattened.append(f"{prefix}:{val}")
-                    elif val:
-                        flattened.append(val)
+                    if not val:
+                        continue
+                    full = f"{prefix}:{val}" if not val.startswith(prefix + ":") else val
+                    val_to_check = val.split(":", 1)[1] if ":" in val else val
+                    if prefix in controlled and val_to_check not in controlled[prefix]:
+                        continue
+                    flattened.append(full)
             flattened = flattened[: cfg.keywords_max]
 
             summary = (processed.get("summary") or "")[: cfg.summary_max_chars]
             entry_type = processed.get("entry_type") or "unknown"
             situation_tag = processed.get("situation_tag")
+            if situation_tag and situation_tag not in allowed_tags:
+                situation_tag = "other" if "other" in allowed_tags else None
+            if not situation_tag and "other" in allowed_tags:
+                situation_tag = "other"  # Ensure all entries get a Cluster_Tag
             relevance_score = int(processed.get("relevance_score", 0))
             trunk_branch = (processed.get("trunk_branch") or "").strip()
 
@@ -436,18 +482,16 @@ Return exactly this structure:
                 if query_result["results"]:
                     page_id = query_result["results"][0]["id"]
                     # Update: only Summary, Keywords, Trunk_Branch, Relevance_Score, Last_Updated
-                    notion.pages.update(
-                        page_id=page_id,
-                        properties={
-                            "Summary": {"rich_text": [{"text": {"content": summary}}]},
-                            "Keywords": {
-                                "multi_select": [{"name": k} for k in flattened],
-                            },
-                            "Trunk_Branch": {"rich_text": [{"text": {"content": trunk_branch}}]},
-                            "Relevance_Score": {"number": relevance_score},
-                            "Last_Updated": {"date": {"start": now_iso}},
-                        },
-                    )
+                    update_props: dict = {
+                        "Summary": {"rich_text": [{"text": {"content": summary}}]},
+                        "Keywords": {"multi_select": [{"name": k} for k in flattened]},
+                        "Trunk_Branch": {"rich_text": [{"text": {"content": trunk_branch}}]},
+                        "Relevance_Score": {"number": relevance_score},
+                        "Last_Updated": {"date": {"start": now_iso}},
+                    }
+                    if situation_tag:
+                        update_props["Cluster_Tag"] = {"select": {"name": situation_tag}}
+                    notion.pages.update(page_id=page_id, properties=update_props)
                     print(f"Updated existing entry: {article['title']}")
                 else:
                     # Create: all 13 properties
@@ -605,7 +649,10 @@ if __name__ == "__main__":
             topic=topic_in,
             since_days=since_days_in,
         )
-        print(f"\nRunning: mode={mode_in}, topic={topic_in!r}, since_days={since_days_in}\n")
+        if mode_in == "rss":
+            print(f"\n[Running RSS feeds (last {since_days_in} days)...]\n")
+        else:
+            print(f"\nRunning: mode={mode_in}, topic={topic_in!r}, since_days={since_days_in}\n")
     else:
         if args.mode == "exa" and not exa_api_key:
             print(

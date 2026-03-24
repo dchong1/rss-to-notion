@@ -1,0 +1,28 @@
+# Cluster tags for situation-updates (one tag per line)
+# The LLM picks from this list when classifying articles.
+# Add your own tags below; tags already in Notion are merged automatically.
+# Delete this file to use built-in defaults.
+
+energy-geopolitics
+us-fiscal
+monetary-policy
+climate-extremes
+tech-development
+private-markets
+geopolitics-us
+semiconductor-tech
+ev-clean-tech
+consumer-finance
+data-software
+china-taiwan
+science-general
+fuel-energy
+us-china-relations
+middle-east-tensions
+europe-energy-crisis
+global-supply-chain
+labor-market-dynamics
+defense-industry
+ai-breakthroughs
+emerging-market-stress
+other

@@ -48,10 +48,10 @@ Create a Notion database with these 13 properties:
 |-----------------|--------------|----------------------------------|
 | Title           | Title        | article title                    |
 | Summary         | Rich text    | LLM summary                      |
-| Keywords        | Multi-select | flattened keyword list           |
+| Keywords        | Multi-select | flattened keyword list from allowed taxonomy (see `config/keywords.txt`) |
 | Source_URL      | URL          | article url                      |
 | Entry_Type      | Select       | LLM entry_type                   |
-| Cluster_Tag     | Select       | LLM situation_tag (if non-null) |
+| Cluster_Tag     | Select       | LLM situation_tag from allowed list (see `config/cluster_tags.txt`) |
 | Trunk_Branch    | Rich text    | LLM trunk_branch                |
 | Relevance_Score | Number       | LLM relevance_score              |
 | Source_Mode     | Select       | "rss" or "exa"                   |
@@ -78,6 +78,14 @@ Share the database with your Notion integration (••• → Add connections).
    ```
 
 3. **Create the Notion database** with the 13 properties above and share it with your integration.
+
+### Config files
+
+| File | Purpose |
+|------|---------|
+| `config/rss_feeds.txt` | RSS feed URLs (one per line) |
+| `config/cluster_tags.txt` | Allowed cluster tags for situation-updates. The LLM picks from this list to group related articles. Add your own tags; existing Notion tags are merged automatically. Override path with `RSS_CLUSTER_TAGS_FILE`. |
+| `config/keywords.txt` | Controlled vocabulary for domain, concept, time_signal. Entity and region stay open. Sections: `[domain]`, `[concept]`, `[time_signal]`. Override path with `RSS_KEYWORDS_FILE`. |
 
 ## Usage
 
