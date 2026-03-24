@@ -22,6 +22,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Test variable
+        run: echo "TEST_VAR=$TEST_VAR"
+        env:
+          TEST_VAR: ${{ vars.TEST_VAR }}
+
       - name: RSS mode
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
