@@ -24,3 +24,21 @@ First public milestone: RSS and Exa pipelines to a Notion database, with Grok su
 
 - [README](https://github.com/dchong1/rss-to-notion/blob/main/README.md)
 - [MIT License](https://github.com/dchong1/rss-to-notion/blob/main/LICENSE)
+
+---
+
+## Publishing (maintainer)
+
+The git tag `v0.1.0` is pushed to `main`. To create the GitHub **Releases** page:
+
+1. Open [Create a new release](https://github.com/dchong1/rss-to-notion/releases/new?tag=v0.1.0) (tag `v0.1.0` pre-selected if it exists).
+2. **Release title:** `rss-to-notion v0.1.0`
+3. **Description:** copy from the first heading through the **Docs** bullet list only (omit the `---` separator and everything below it in this file).
+
+Or locally, after `gh auth login`:
+
+```bash
+gh release create v0.1.0 --title "rss-to-notion v0.1.0" --notes-file docs/RELEASE-v0.1.0.md
+```
+
+(Edit the notes file to remove this *Publishing* section first, or paste the upper portion only.)
