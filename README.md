@@ -9,7 +9,11 @@ Personal knowledge database that pulls content via **RSS** feeds or **Exa** sema
 [![Notion](https://img.shields.io/badge/Notion_API-green)](https://developers.notion.com)
 [![Exa](https://img.shields.io/badge/Exa_Search-API-blue)](https://exa.ai)
 
-**Demo:** [Screen recording — interactive CLI and Notion](assets/demo.mov)
+### Demo
+
+![Interactive CLI and Notion — screen recording](assets/demo.gif)
+
+*First ~25s of the run, looping GIF. **Full recording (~79s, H.264):** [demo.mp4](assets/demo.mp4).*
 
 ## RSS vs Exa: Two Approaches
 
@@ -146,7 +150,7 @@ For manual Exa runs, also set `EXA_API_KEY` and optionally `RSS_TOPIC`.
 
 **Video demo**
 
-[Screen recording (`.mov`)](assets/demo.mov) — interactive run and Notion result.
+The [demo GIF](#demo) above plays inline in this README. For the full capture, open [assets/demo.mp4](assets/demo.mp4).
 
 Example outputs from interactive Exa mode.
 
