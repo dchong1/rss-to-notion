@@ -9,6 +9,8 @@ Personal knowledge database that pulls content via **RSS** feeds or **Exa** sema
 [![Notion](https://img.shields.io/badge/Notion_API-green)](https://developers.notion.com)
 [![Exa](https://img.shields.io/badge/Exa_Search-API-blue)](https://exa.ai)
 
+**Demo:** [Screen recording — interactive CLI and Notion](assets/demo.mov)
+
 ## RSS vs Exa: Two Approaches
 
 | Aspect | RSS Mode | Exa Mode |
@@ -141,6 +143,10 @@ For manual Exa runs, also set `EXA_API_KEY` and optionally `RSS_TOPIC`.
 - Obsidian export of `trunk_branch` entries as a concept graph
 
 ## Screenshots
+
+**Video demo**
+
+[Screen recording (`.mov`)](assets/demo.mov) — interactive run and Notion result.
 
 Example outputs from interactive Exa mode.
 
