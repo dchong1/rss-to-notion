@@ -38,7 +38,7 @@ The git tag `v0.1.0` is pushed to `main`. To create the GitHub **Releases** page
 Or locally, after `gh auth login`:
 
 ```bash
-gh release create v0.1.0 --title "rss-to-notion v0.1.0" --notes-file docs/RELEASE-v0.1.0.md
+gh release create v0.1.0 --title "rss-to-notion v0.1.0" --notes-file docs/RELEASE-v0.1.0-body.md
 ```
 
-(Edit the notes file to remove this *Publishing* section first, or paste the upper portion only.)
+Or set `GITHUB_TOKEN` and run [scripts/follow-up-github.sh](../scripts/follow-up-github.sh) to set **topics** and create the **release** in one step (requires token with appropriate scopes).

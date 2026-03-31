@@ -143,7 +143,7 @@ For manual Exa runs, also set `EXA_API_KEY` and optionally `RSS_TOPIC`.
 
 Open an [issue](https://github.com/dchong1/rss-to-notion/issues) for bugs, ideas, or questions. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-**Repository visibility (topics, profile pin):** Step-by-step on GitHub is in [docs/github-ui-setup.md](docs/github-ui-setup.md). If you use the GitHub CLI (`gh auth login`), run `scripts/add-github-topics.sh` to add suggested topics.
+**Repository visibility (topics, profile pin):** Step-by-step on GitHub is in [docs/github-ui-setup.md](docs/github-ui-setup.md). If you use the GitHub CLI (`gh auth login`), run `scripts/add-github-topics.sh` to add suggested topics. With a `GITHUB_TOKEN` that has repo access, `scripts/follow-up-github.sh` sets topics and publishes the **v0.1.0** release (see script header).
 
 ## Future explorations
 

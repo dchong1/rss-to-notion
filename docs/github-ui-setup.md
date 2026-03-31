@@ -2,6 +2,8 @@
 
 Steps you complete on [github.com](https://github.com) (not stored in git). If the [GitHub CLI](https://cli.github.com/) is installed and authenticated (`gh auth login`), you can add **topics** from your machine with [scripts/add-github-topics.sh](../scripts/add-github-topics.sh).
 
+To set **topics** and create the **v0.1.0** GitHub Release in one shot, set `GITHUB_TOKEN` (or `GH_TOKEN`) and run [scripts/follow-up-github.sh](../scripts/follow-up-github.sh). You still need the browser for **profile pins** and an optional **profile README** repo (see below).
+
 ## Repository topics (discovery)
 
 1. Open [dchong1/rss-to-notion](https://github.com/dchong1/rss-to-notion).
