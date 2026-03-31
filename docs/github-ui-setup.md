@@ -4,6 +4,20 @@ Steps you complete on [github.com](https://github.com) (not stored in git). If t
 
 To set **topics** and create the **v0.1.0** GitHub Release in one shot, set `GITHUB_TOKEN` (or `GH_TOKEN`) and run [scripts/follow-up-github.sh](../scripts/follow-up-github.sh). You still need the browser for **profile pins** and an optional **profile README** repo (see below).
 
+## GitHub Release (you have the tag but no Release)
+
+If `v0.1.0` appears under **Tags** but [Releases](https://github.com/dchong1/rss-to-notion/releases) is empty, attach release notes to that tag.
+
+**CLI** (from this repo, with `gh auth login`):
+
+```bash
+gh release create v0.1.0 --title "rss-to-notion v0.1.0" --notes-file docs/RELEASE-v0.1.0-body.md
+```
+
+Do **not** pass `--generate-notes` unless you want to replace the file-based body. If GitHub says the release already exists, run `gh release list` and edit or delete the draft from the web UI.
+
+**Web UI:** [Draft a new release](https://github.com/dchong1/rss-to-notion/releases/new) → **Choose a tag** → `v0.1.0` → Release title `rss-to-notion v0.1.0` → paste the contents of [RELEASE-v0.1.0-body.md](RELEASE-v0.1.0-body.md) → **Publish release**.
+
 ## Repository topics (discovery)
 
 1. Open [dchong1/rss-to-notion](https://github.com/dchong1/rss-to-notion).
