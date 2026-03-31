@@ -139,6 +139,12 @@ For manual Exa runs, also set `EXA_API_KEY` and optionally `RSS_TOPIC`.
 - **Property names**: Must match exactly (e.g. `Source_URL`, not `Source URL`).
 - **Exa mode**: Requires `EXA_API_KEY` in `.env`.
 
+## Contributing and feedback
+
+Open an [issue](https://github.com/dchong1/rss-to-notion/issues) for bugs, ideas, or questions. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+**Repository visibility (topics, profile pin):** Step-by-step on GitHub is in [docs/github-ui-setup.md](docs/github-ui-setup.md). If you use the GitHub CLI (`gh auth login`), run `scripts/add-github-topics.sh` to add suggested topics.
+
 ## Future explorations
 
 - Exa `findSimilar` seeding: pass URL of a saved entry to discover related content
@@ -165,3 +171,7 @@ Example outputs from interactive Exa mode.
 ![Notion database table view](assets/notion-database.png)
 
 *Table view with Title, Summary, Cluster_Tag, Keywords, and Feed_Source columns.*
+
+## License
+
+[MIT](LICENSE)
