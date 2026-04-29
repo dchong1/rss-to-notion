@@ -21,6 +21,8 @@ labor-dynamics
 commodities
 defense-spending
 demographics
+family office
+billionaire
 other
 
 [concept]
