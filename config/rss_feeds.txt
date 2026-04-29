@@ -21,3 +21,10 @@ https://feeds.bloomberg.com/business/news.rss
 https://feeds.bloomberg.com/wealth/news.rss
 https://feeds.bloomberg.com/industries/news.rss
 https://feeds.bloomberg.com/bview/news.rss
+https://www.bloomberg.com/authors/ARbTQlRLRjE/matthew-s-levine.rss
+https://www.bloomberg.com/authors/AQdUWe1dz2M/devon-pendleton.rss
+https://www.bloomberg.com/authors/ASWZ3TqHq1E/benjamin-stupples.rss
+
+
+
+
