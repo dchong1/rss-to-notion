@@ -21,8 +21,11 @@ labor-dynamics
 commodities
 defense-spending
 demographics
-family office
+family-office
 billionaire
+carried-interest
+private-equity
+LP-GP
 other
 
 [concept]
