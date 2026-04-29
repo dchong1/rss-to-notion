@@ -25,6 +25,16 @@ https://www.bloomberg.com/authors/ARbTQlRLRjE/matthew-s-levine.rss
 https://www.bloomberg.com/authors/AQdUWe1dz2M/devon-pendleton.rss
 https://www.bloomberg.com/authors/ASWZ3TqHq1E/benjamin-stupples.rss
 
+#Private market focused
+https://www.ft.com/private-equity?format=rss
+https://www.ft.com/private-equity?format=rss
+https://www.altassets.net/feed
+https://www.privateequitywire.co.uk/dailynews.xml
+https://www.connectmoney.com/feed?story-market=private-debt
+https://www.hedgeweek.com/dailynews.xml
+
+
+
 
 
 
