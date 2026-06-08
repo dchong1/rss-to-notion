@@ -73,11 +73,22 @@ DEFAULT_CLUSTER_TAGS = [
 ]
 
 
-def load_feeds(config_path: str | None = None) -> list[str]:
-    """Load feed URLs from file. Falls back to DEFAULT_FEEDS if file missing/invalid."""
+def feeds_file_path(config_path: str | None = None) -> str:
+    """Resolve the path to the RSS feeds config file (explicit arg, env var, or default)."""
     path = config_path or os.environ.get("RSS_FEEDS_FILE")
     if not path:
         path = os.path.join(os.path.dirname(__file__), "..", "config", "rss_feeds.txt")
+    return path
+
+
+def _normalize_feed_url(url: str) -> str:
+    """Normalize a feed URL for de-duplication (lowercase, strip trailing slash)."""
+    return (url or "").strip().lower().rstrip("/")
+
+
+def load_feeds(config_path: str | None = None) -> list[str]:
+    """Load feed URLs from file. Falls back to DEFAULT_FEEDS if file missing/invalid."""
+    path = feeds_file_path(config_path)
     if not os.path.isfile(path):
         return list(DEFAULT_FEEDS)
     feeds = []
@@ -87,6 +98,49 @@ def load_feeds(config_path: str | None = None) -> list[str]:
             if line and not line.startswith("#"):
                 feeds.append(line)
     return feeds if feeds else list(DEFAULT_FEEDS)
+
+
+def append_feeds(
+    new_feeds: list[str],
+    config_path: str | None = None,
+    header: str | None = None,
+) -> list[str]:
+    """Append feed URLs to the feeds file, skipping any already present.
+
+    De-duplicates against existing feeds (and within new_feeds) using a normalized
+    comparison. Creates the file if missing. Returns the feeds actually added.
+    """
+    path = feeds_file_path(config_path)
+    existing = load_feeds(path) if os.path.isfile(path) else []
+    seen = {_normalize_feed_url(u) for u in existing}
+
+    to_add: list[str] = []
+    for url in new_feeds:
+        url = (url or "").strip()
+        if not url:
+            continue
+        norm = _normalize_feed_url(url)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        to_add.append(url)
+
+    if not to_add:
+        return []
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    needs_newline = os.path.isfile(path) and os.path.getsize(path) > 0
+    if needs_newline:
+        with open(path) as f:
+            needs_newline = not f.read().endswith("\n")
+    with open(path, "a") as f:
+        if needs_newline:
+            f.write("\n")
+        if header:
+            f.write(f"\n# {header}\n")
+        for url in to_add:
+            f.write(url + "\n")
+    return to_add
 
 
 def load_cluster_tags(config_path: str | None = None) -> list[str]:
