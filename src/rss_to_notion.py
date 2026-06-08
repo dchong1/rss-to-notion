@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import json
 import os
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import feedparser  # pyright: ignore[reportMissingImports]
 import httpx
@@ -22,7 +22,7 @@ from openai import OpenAI
 # Load .env from project root (parent of src/)
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-from feeds import load_cluster_tags, load_feeds, load_keywords
+from feeds import append_feeds, feeds_file_path, load_cluster_tags, load_feeds, load_keywords
 
 # -----------------------------------------------------------------------------
 # Internal article schema (shared between RSS and Exa modes)
@@ -49,6 +49,7 @@ class RSSConfig:
         content_snippet_length: Max chars from article text sent to Grok.
         summary_max_chars: Max chars for Summary in Notion.
         keywords_max: Max keywords stored in Notion.
+        discover_num_feeds: Max feeds to suggest in feed-discovery mode.
         rss_feeds: List of RSS feed URLs.
         cluster_tags: Allowed cluster tags for situation-updates (from file or defaults).
         keyword_taxonomy: Allowed keywords per category (domain, concept, time_signal).
@@ -64,6 +65,7 @@ class RSSConfig:
     content_snippet_length: int = 1000
     summary_max_chars: int = 2000
     keywords_max: int = 10
+    discover_num_feeds: int = 8
     rss_feeds: list[str] = field(default_factory=load_feeds)
     cluster_tags: list[str] = field(default_factory=load_cluster_tags)
     keyword_taxonomy: dict[str, list[str]] = field(default_factory=load_keywords)
@@ -224,6 +226,215 @@ def fetch_articles(
     )
 
 
+def _strip_code_fences(raw: str) -> str:
+    """Strip a leading/trailing markdown code fence from an LLM response, if present."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    return raw.strip()
+
+
+def _grok_complete(
+    client: OpenAI,
+    models: list[str],
+    system_prompt: str,
+    user_prompt: str,
+    label: str = "",
+) -> str | None:
+    """Call Grok with model fallback. Returns the message content, or None on failure."""
+    suffix = f" for '{label}'" if label else ""
+    for model in models:
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            err_str = str(e).lower()
+            if "model" in err_str or "not found" in err_str:
+                print(f"Grok model {model} unavailable, trying fallback: {e}")
+                continue
+            print(f"Grok API error{suffix}: {e}")
+            break
+    return None
+
+
+def suggest_feeds(
+    topic: str,
+    grok_api_key: str,
+    config: Optional[RSSConfig] = None,
+) -> list[dict[str, Any]]:
+    """Ask Grok to suggest high-quality RSS/Atom feeds for a subject.
+
+    Returns a list of dicts with keys: url, name, reason, already_present.
+    Feeds already in the configured feed list are flagged via already_present.
+    """
+    cfg = config or DEFAULT_CONFIG
+    client = OpenAI(api_key=grok_api_key, base_url="https://api.x.ai/v1")
+    existing = {_normalize_url(u) for u in cfg.rss_feeds}
+
+    system_prompt = (
+        "You are a research librarian who curates high-quality RSS/Atom feeds. "
+        "You recommend only reputable, actively-maintained sources whose feed endpoints "
+        "actually work (the RSS/Atom URL, not a homepage or article page). Prefer primary "
+        "sources, established publications, and respected domain experts over content farms "
+        "or SEO blogs."
+    )
+    user_prompt = f"""Suggest up to {cfg.discover_num_feeds} high-quality RSS or Atom feeds for the subject: "{topic}".
+
+Return ONLY a valid JSON object. No preamble, no markdown fences, no trailing commentary:
+
+{{
+  "feeds": [
+    {{"name": "Source name", "url": "https://example.com/feed.xml", "reason": "one short sentence on why it is high quality and relevant"}}
+  ]
+}}
+
+Rules:
+- "url" must be a direct RSS/Atom feed endpoint, not a homepage or article URL.
+- Only include sources you are confident publish a working feed.
+- Prefer reputable, primary, or expert sources; avoid low-quality aggregators and content farms.
+- Cover a range of perspectives within the subject where possible."""
+
+    content = _grok_complete(
+        client, cfg.grok_models, system_prompt, user_prompt, label=f"feed discovery: {topic}"
+    )
+    if not content:
+        return []
+
+    try:
+        data = json.loads(_strip_code_fences(content))
+    except json.JSONDecodeError as e:
+        print(f"Warning: could not parse feed suggestions: {e}")
+        return []
+
+    raw_feeds = data.get("feeds") if isinstance(data, dict) else data
+    results: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_feeds or []:
+        if isinstance(item, str):
+            url, name, reason = item, "", ""
+        elif isinstance(item, dict):
+            url = (item.get("url") or item.get("feed_url") or "").strip()
+            name = (item.get("name") or item.get("title") or "").strip()
+            reason = (item.get("reason") or "").strip()
+        else:
+            continue
+        if not url:
+            continue
+        norm = _normalize_url(url)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        results.append(
+            {
+                "url": url,
+                "name": name,
+                "reason": reason,
+                "already_present": norm in existing,
+            }
+        )
+    return results
+
+
+def validate_feed_url(url: str) -> tuple[bool, str]:
+    """Check that a URL resolves to a parseable feed with at least one entry.
+
+    Returns (is_valid, detail). Network/parse errors are reported as invalid.
+    """
+    try:
+        feed = feedparser.parse(url)
+    except Exception as e:
+        return False, f"parse error: {e}"
+    entries = getattr(feed, "entries", None)
+    if not entries:
+        return False, "no entries found (not a usable feed)"
+    feed_meta = getattr(feed, "feed", None)
+    title = str(feed_meta.get("title", "")).strip() if isinstance(feed_meta, dict) else ""
+    count = len(entries)
+    return True, f"{title} ({count} entries)" if title else f"{count} entries"
+
+
+def discover_feeds(
+    topic: str,
+    grok_api_key: str,
+    config: Optional[RSSConfig] = None,
+    feeds_path: Optional[str] = None,
+    validate: bool = True,
+    assume_yes: bool = False,
+) -> list[str]:
+    """Suggest feeds for a subject, confirm with the user, and add them to the feed bank.
+
+    Args:
+        topic: Subject to find feeds for.
+        grok_api_key: xAI API key for Grok.
+        config: Optional RSSConfig; uses DEFAULT_CONFIG if not provided.
+        feeds_path: Optional override for the feeds file path.
+        validate: When True, live-check each suggested feed before offering it.
+        assume_yes: When True, auto-confirm every valid, non-duplicate suggestion.
+
+    Returns the list of feed URLs added to the feed file.
+    """
+    cfg = config or DEFAULT_CONFIG
+    if not topic.strip():
+        print("No subject provided; nothing to discover.")
+        return []
+
+    print(f"\nAsking Grok for high-quality RSS feeds on: {topic!r}\n")
+    suggestions = suggest_feeds(topic, grok_api_key, cfg)
+    if not suggestions:
+        print("No feed suggestions returned.")
+        return []
+
+    confirmed: list[str] = []
+    for i, s in enumerate(suggestions, 1):
+        header = s["name"] or s["url"]
+        print(f"[{i}] {header}")
+        print(f"    {s['url']}")
+        if s["reason"]:
+            print(f"    why: {s['reason']}")
+
+        if s["already_present"]:
+            print("    (already in your feed list — skipping)\n")
+            continue
+
+        if validate:
+            ok, detail = validate_feed_url(s["url"])
+            print(f"    {'✓ valid' if ok else '✗ invalid'}: {detail}")
+            if not ok:
+                print("    (skipped: failed validation)\n")
+                continue
+
+        if assume_yes:
+            confirmed.append(s["url"])
+            print("    added (auto-confirmed)\n")
+            continue
+
+        ans = input("    Add this feed? [y/N]: ").strip().lower()
+        if ans in ("y", "yes"):
+            confirmed.append(s["url"])
+        print()
+
+    if not confirmed:
+        print("No feeds added.")
+        return []
+
+    added = append_feeds(confirmed, config_path=feeds_path, header=f"Discovered for: {topic}")
+    if added:
+        print(f"\nAdded {len(added)} feed(s) to {feeds_file_path(feeds_path)}:")
+        for url in added:
+            print(f"  + {url}")
+        print("\nThese will be pulled automatically on future RSS runs.")
+    else:
+        print("\nNo new feeds added (all selected feeds were already present).")
+    return added
+
+
 def update_notion_with_rss(
     notion_token: str = "",
     database_id: str = "",
@@ -361,37 +572,15 @@ Return exactly this structure:
                 allowed_time_signal=", ".join(allowed_time_signal),
             )
 
-            grok_models = cfg.grok_models
-            content: str | None = None
-            for model in grok_models:
-                try:
-                    response = client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
-                        ],
-                    )
-                    content = response.choices[0].message.content.strip()
-                    break
-                except Exception as e:
-                    err_str = str(e).lower()
-                    if "model" in err_str or "not found" in err_str:
-                        print(f"Grok model {model} unavailable, trying fallback: {e}")
-                        continue
-                    print(f"Grok API error for '{article['title']}': {e}")
-                    break
+            content = _grok_complete(
+                client, cfg.grok_models, system_prompt, user_prompt, label=article["title"]
+            )
             if content is None:
                 continue
 
             # Parse JSON with fallback on failure
             try:
-                # Strip markdown code fences if present
-                raw = content.strip()
-                if raw.startswith("```"):
-                    lines = raw.split("\n")
-                    raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-                processed = json.loads(raw)
+                processed = json.loads(_strip_code_fences(content))
             except json.JSONDecodeError as e:
                 print(f"Warning: LLM parse failure for '{article['title']}': {e}. Using fallback.")
                 processed = {
@@ -607,6 +796,27 @@ if __name__ == "__main__":
         action="store_true",
         help="Prompt for mode, topic, and since-days interactively",
     )
+    parser.add_argument(
+        "--discover-feeds",
+        action="store_true",
+        help="Suggest high-quality RSS feeds for a subject (--topic), confirm, and add them to the feed list",
+    )
+    parser.add_argument(
+        "--num-feeds",
+        type=int,
+        default=DEFAULT_CONFIG.discover_num_feeds,
+        help="How many feeds to suggest in --discover-feeds (default: 8)",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Auto-confirm all valid suggested feeds in --discover-feeds (skip per-feed prompts)",
+    )
+    parser.add_argument(
+        "--no-validate",
+        action="store_true",
+        help="Skip live validation of suggested feed URLs in --discover-feeds",
+    )
     args = parser.parse_args()
 
     if args.list_databases:
@@ -616,16 +826,50 @@ if __name__ == "__main__":
         list_notion_databases(notion_token)
         raise SystemExit(0)
 
-    if not all([notion_token, database_id, grok_api_key]):
-        print(
-            "Error: Set NOTION_TOKEN, NOTION_DATABASE_ID, and GROK_API_KEY in .env "
-            "(copy .env.example to .env and fill in your values)"
-        )
-        raise SystemExit(1)
+    # Feed discovery: prompt a subject, get LLM feed suggestions, confirm, add to feed list.
+    # Only needs GROK_API_KEY (no Notion access required).
+    if args.discover_feeds:
+        if not grok_api_key:
+            print("Error: Set GROK_API_KEY in .env to discover feeds")
+            raise SystemExit(1)
+        topic_in = args.topic
+        if not args.yes:
+            entered = input(f"Subject to find feeds for [{topic_in}]: ").strip()
+            topic_in = entered or topic_in
+        discover_config = RSSConfig(discover_num_feeds=args.num_feeds)
+        try:
+            discover_feeds(
+                topic_in,
+                grok_api_key,
+                config=discover_config,
+                validate=not args.no_validate,
+                assume_yes=args.yes,
+            )
+        except KeyboardInterrupt:
+            print("\nInterrupted by user.")
+            raise SystemExit(130)
+        raise SystemExit(0)
 
     if args.interactive:
         print("\n--- RSS-to-Notion (interactive) ---\n")
-        mode_in = input("Mode (rss/exa) [rss]: ").strip().lower() or "rss"
+        mode_in = input("Mode (rss/exa/discover) [rss]: ").strip().lower() or "rss"
+        if mode_in == "discover":
+            if not grok_api_key:
+                print("Error: Set GROK_API_KEY in .env to discover feeds")
+                raise SystemExit(1)
+            topic_in = input("Subject to find feeds for: ").strip() or args.topic
+            discover_config = RSSConfig(discover_num_feeds=args.num_feeds)
+            try:
+                discover_feeds(
+                    topic_in,
+                    grok_api_key,
+                    config=discover_config,
+                    validate=not args.no_validate,
+                )
+            except KeyboardInterrupt:
+                print("\nInterrupted by user.")
+                raise SystemExit(130)
+            raise SystemExit(0)
         if mode_in not in ("rss", "exa"):
             mode_in = "rss"
         if mode_in == "exa":
@@ -665,6 +909,15 @@ if __name__ == "__main__":
             topic=args.topic,
             since_days=args.since_days,
         )
+
+    # The Notion pipeline needs all three credentials (discover/list paths exit earlier).
+    if not all([notion_token, database_id, grok_api_key]):
+        print(
+            "Error: Set NOTION_TOKEN, NOTION_DATABASE_ID, and GROK_API_KEY in .env "
+            "(copy .env.example to .env and fill in your values)"
+        )
+        raise SystemExit(1)
+
     try:
         update_notion_with_rss(
             notion_token=notion_token,

@@ -104,8 +104,25 @@ RSS mode is the default; Exa mode is for targeted discovery when researching a s
 | `python src/rss_to_notion.py --since-days 7`           | RSS, extend lookback window           |
 | `python src/rss_to_notion.py --mode exa`               | Exa discovery, default topic          |
 | `python src/rss_to_notion.py --topic "X" --mode exa`   | Exa search on custom topic            |
+| `python src/rss_to_notion.py --discover-feeds --topic "X"` | Suggest RSS feeds for a subject, confirm, add to feed list |
 
 Exa mode limits output to 5 results and only upserts articles with relevance score ≥ 7.
+
+### Discover feeds (grow your feed bank)
+
+Find high-quality RSS feeds for a subject and add the ones you approve to `config/rss_feeds.txt`, so they are pulled automatically on every future RSS run.
+
+```bash
+# Suggest feeds for a subject, confirm each one, then save
+python src/rss_to_notion.py --discover-feeds --topic "private equity secondaries"
+
+# Or pick "discover" in interactive mode
+python src/rss_to_notion.py -i
+```
+
+The LLM proposes reputable feed endpoints for your subject. Each suggestion is live-checked (parsed to confirm it is a working feed) and shown with the source name and a one-line rationale; you confirm per feed before it is saved. Duplicates already in your feed list are skipped automatically.
+
+Flags: `--num-feeds N` (how many to suggest, default 8), `--yes` (auto-confirm all valid suggestions), `--no-validate` (skip the live feed check). Only `GROK_API_KEY` is required.
 
 ### Interactive mode
 
@@ -115,7 +132,7 @@ Run with `-i` to be prompted instead of passing flags:
 python src/rss_to_notion.py -i
 ```
 
-Prompts: **Mode** (rss/exa), **Topic** (Exa only), **Since days** (both modes). See [Screenshots](#screenshots) for an example run.
+Prompts: **Mode** (rss/exa/discover), **Topic** (Exa and discover), **Since days** (rss/exa). Choosing **discover** finds and saves new feeds instead of running the pipeline (see [Discover feeds](#discover-feeds-grow-your-feed-bank)). See [Screenshots](#screenshots) for an example run.
 
 ```bash
 # List Notion databases shared with your integration
